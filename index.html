@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>圖片裁切與合成工具 (高階版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" />
+    <style>
+        .img-container {
+            height: 350px;
+            background-color: #1f2937;
+        }
+
+        img {
+            display: block;
+            max-width: 100%;
+        }
+
+        /* 拖曳時：原本位置的佔位樣式 (半透明虛線框) */
+        .sortable-ghost {
+            opacity: 0.3;
+            background-color: #374151;
+            border: 2px dashed #60a5fa;
+        }
+
+        /* 拖曳中：正在被拖著跑的那張卡片樣式 */
+        .sortable-drag {
+            cursor: grabbing;
+            opacity: 1;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+            transform: scale(1.02);
+            /* 稍微放大一點，更有拿起來的感覺 */
+        }
+
+        .drag-handle {
+            cursor: grab;
+            cursor: -webkit-grab;
+        }
+
+        .drag-handle:active {
+            cursor: grabbing;
+            cursor: -webkit-grabbing;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-white min-h-screen p-6">
+
+    <div class="max-w-6xl mx-auto">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold mb-2">圖片批次裁切與合成</h1>
+            <p class="text-gray-400">完整比例支援 | 流暢拖曳排序</p>
+        </header>
+
+        <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div class="col-span-1 md:col-span-4">
+                <label class="block text-sm font-medium mb-2">1. 選擇圖片 (可多選)</label>
+                <input type="file" id="imageInput" multiple accept="image/*"
+                    class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-2">2. 全域裁切比例</label>
+                <select id="aspectRatio"
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500">
+                    <option value="1">1:1 (正方形)</option>
+                    <option value="1.5" selected>3:2 (單眼橫幅)</option>
+                    <option value="0.66666">2:3 (單眼直幅)</option>
+                    <option value="1.33333">4:3 (傳統螢幕)</option>
+                    <option value="0.75">3:4 (傳統直式)</option>
+                    <option value="1.77777">16:9 (寬螢幕)</option>
+                    <option value="0.5625">9:16 (手機直式)</option>
+                    <option value="NaN">自由比例</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-2">3. 合成列數 (每行幾張)</label>
+                <input type="number" id="columnsInput" value="3" min="1"
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-2">單圖輸出寬度 (px)</label>
+                <input type="number" id="outputWidth" value="800"
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-2">4. 邊框寬度 (px)</label>
+                <input type="number" id="borderWidth" value="0" min="0"
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-2">邊框顏色</label>
+                <input type="color" id="borderColor" value="#ffffff"
+                    class="w-full h-[42px] bg-gray-700 border border-gray-600 rounded px-1 py-1 cursor-pointer">
+            </div>
+
+            <div class="md:col-start-4">
+                <button id="generateBtn"
+                    class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition duration-200">
+                    合成圖片
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+            <div class="space-y-6">
+                <div class="flex justify-between items-center border-b border-gray-700 pb-2">
+                    <h2 class="text-xl font-semibold">編輯區域</h2>
+                    <div class="flex items-center gap-2">
+                        <span id="imgCountLabel" class="text-sm text-gray-400 font-normal">(0 張)</span>
+                        <button id="clearAllBtn"
+                            class="text-xs bg-red-900 hover:bg-red-800 text-red-100 px-2 py-1 rounded">清空全部</button>
+                    </div>
+                </div>
+
+                <div id="editorContainer" class="space-y-4 min-h-[100px]">
+                    <p id="placeholderText" class="text-gray-500 text-center py-10">請上傳圖片...</p>
+                </div>
+            </div>
+
+            <div>
+                <h2 class="text-xl font-semibold border-b border-gray-700 pb-2 mb-4">合成結果</h2>
+                <div id="resultContainer"
+                    class="bg-gray-800 p-4 rounded min-h-[200px] flex items-center justify-center border-2 border-dashed border-gray-700">
+                    <span class="text-gray-500">等待合成...</span>
+                </div>
+                <a id="downloadLink"
+                    class="hidden mt-4 block w-full text-center bg-blue-600 hover:bg-blue-700 py-2 rounded font-bold cursor-pointer">下載圖片</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <script>
+        const imageInput = document.getElementById('imageInput');
+        const editorContainer = document.getElementById('editorContainer');
+        const placeholderText = document.getElementById('placeholderText');
+        const aspectRatioSelect = document.getElementById('aspectRatio');
+        const generateBtn = document.getElementById('generateBtn');
+        const columnsInput = document.getElementById('columnsInput');
+        const outputWidthInput = document.getElementById('outputWidth');
+        const borderWidthInput = document.getElementById('borderWidth');
+        const borderColorInput = document.getElementById('borderColor');
+        const resultContainer = document.getElementById('resultContainer');
+        const downloadLink = document.getElementById('downloadLink');
+        const imgCountLabel = document.getElementById('imgCountLabel');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+
+        // 新增全部下載按鈕
+        const downloadAllBtn = document.createElement('button');
+        downloadAllBtn.className = "hidden mt-4 block w-full text-center bg-purple-600 hover:bg-purple-700 text-white py-2 rounded font-bold cursor-pointer transition duration-200";
+        downloadAllBtn.textContent = "全部下載 (ZIP)";
+        // 插入在 downloadLink 之後
+        downloadLink.parentNode.insertBefore(downloadAllBtn, downloadLink.nextSibling);
+
+        // --- 優化後的 SortableJS 設定 ---
+        new Sortable(editorContainer, {
+            animation: 200,      // 動畫時間，讓交換過程更滑順
+            handle: '.drag-handle',
+            ghostClass: 'sortable-ghost',
+            dragClass: 'sortable-drag',
+
+            // 關鍵設定：讓擠動更容易觸發
+            swapThreshold: 0.65, // 數值越小越容易交換 (預設 1)。0.65 代表遮住目標 65% 時就交換，手感較佳
+
+            // 自動捲動設定
+            scroll: true,
+            scrollSensitivity: 150, // 靠近邊緣多少 px 開始捲動
+            scrollSpeed: 20,        // 捲動速度
+
+            onEnd: function () {
+                // 排序結束後的 callback (目前無需操作)
+            }
+        });
+
+        function updateUIState() {
+            const count = editorContainer.querySelectorAll('.image-block').length;
+            imgCountLabel.textContent = `(${count} 張)`;
+            placeholderText.style.display = count === 0 ? 'block' : 'none';
+
+            // 有圖片時顯示全部下載按鈕
+            if (count > 0) {
+                downloadAllBtn.classList.remove('hidden');
+            } else {
+                downloadAllBtn.classList.add('hidden');
+            }
+        }
+
+        // 全部下載按鈕事件
+        downloadAllBtn.addEventListener('click', async () => {
+            const images = Array.from(editorContainer.querySelectorAll('img.editable-image'));
+            if (images.length === 0) return;
+
+            const zip = new JSZip();
+            const folder = zip.folder("cropped_images");
+            const targetWidth = parseInt(outputWidthInput.value) || 800;
+
+            // 顯示處理中狀態
+            const originalText = downloadAllBtn.textContent;
+            downloadAllBtn.textContent = "處理中...";
+            downloadAllBtn.disabled = true;
+
+            try {
+                const promises = images.map((img, index) => {
+                    return new Promise((resolve) => {
+                        if (img.cropper) {
+                            // 取得原始檔名 (從我們之前存的 data 屬性或是重新抓取，這裡我們簡單用順序命名，或者如果能存取到原始檔名更好)
+                            let filename = `image_${index + 1}.jpg`;
+
+                            // 嘗試從 toolbar 找回檔名
+                            const toolbar = img.closest('.image-block').querySelector('.drag-handle span:last-child');
+                            if (toolbar) {
+                                // 去除括號
+                                const nameText = toolbar.textContent.replace(/^\(|\)$/g, '');
+                                if (nameText) filename = nameText;
+                            }
+
+                            img.cropper.getCroppedCanvas({
+                                width: targetWidth // 限制輸出寬度
+                            }).toBlob((blob) => {
+                                folder.file(filename, blob);
+                                resolve();
+                            }, 'image/jpeg', 0.9);
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+
+                await Promise.all(promises);
+
+                const content = await zip.generateAsync({ type: "blob" });
+                const url = URL.createObjectURL(content);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `cropped_images_${Date.now()}.zip`;
+                a.click();
+                URL.revokeObjectURL(url);
+
+            } catch (err) {
+                console.error("ZIP 建立失敗", err);
+                alert("建立 ZIP 檔時發生錯誤");
+            } finally {
+                downloadAllBtn.textContent = originalText;
+                downloadAllBtn.disabled = false;
+            }
+        });
+
+        clearAllBtn.addEventListener('click', () => {
+            if (!confirm('確定要移除所有圖片嗎？')) return;
+            const blocks = editorContainer.querySelectorAll('.image-block');
+            blocks.forEach(block => {
+                const img = block.querySelector('img.editable-image');
+                if (img && img.cropper) img.cropper.destroy();
+                block.remove();
+            });
+            updateUIState();
+            resultContainer.innerHTML = '<span class="text-gray-500">等待合成...</span>';
+            downloadLink.classList.add('hidden');
+            imageInput.value = '';
+        });
+
+        // 1. 處理圖片上傳 (修改為先讀取全部 -> 排序 -> 顯示)
+        imageInput.addEventListener('change', async function (e) {
+            const files = Array.from(e.target.files);
+            if (!files.length) return;
+
+            // 建立一個 Promise 陣列來讀取所有檔案
+            const readPromises = files.map(file => {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        resolve({
+                            name: file.name,
+                            data: e.target.result
+                        });
+                    };
+                    reader.readAsDataURL(file);
+                });
+            });
+
+            try {
+                // 等待所有檔案讀取完成
+                const results = await Promise.all(readPromises);
+
+                // 依檔名排序 (使用 localeCompare 支援中文排序，numeric: true 讓 1.jpg, 2.jpg, 10.jpg 排序正確)
+                results.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant-TW', { numeric: true }));
+
+                // 依序顯示圖片
+                results.forEach(item => {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = "image-block bg-gray-800 rounded shadow-lg overflow-hidden border border-gray-700 mb-4";
+
+                    // Toolbar
+                    const toolbar = document.createElement('div');
+                    toolbar.className = "flex justify-between items-center bg-gray-700 px-3 py-2 select-none cursor-grab active:cursor-grabbing drag-handle";
+
+                    const dragHandle = document.createElement('div');
+                    dragHandle.className = "flex items-center gap-2 text-gray-300 hover:text-white transition";
+                    dragHandle.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
+                        </svg>
+                        <span class="text-xs font-bold uppercase tracking-wider">拖曳調整順序</span>
+                        <span class="text-xs text-gray-400 ml-2">(${item.name})</span>
+                    `;
+
+                    const removeBtn = document.createElement('button');
+                    removeBtn.className = "text-red-400 hover:text-red-200 transition p-1 hover:bg-gray-600 rounded";
+                    removeBtn.title = "移除此圖片";
+                    removeBtn.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    `;
+                    removeBtn.onmousedown = (e) => e.stopPropagation();
+
+                    removeBtn.onclick = function (e) {
+                        e.stopPropagation();
+                        const img = wrapper.querySelector('img.editable-image');
+                        if (img && img.cropper) img.cropper.destroy();
+                        wrapper.remove();
+                        updateUIState();
+                    };
+
+                    toolbar.appendChild(dragHandle);
+                    toolbar.appendChild(removeBtn);
+
+                    const imgContainer = document.createElement('div');
+                    imgContainer.className = 'img-container bg-black relative';
+
+                    const img = document.createElement('img');
+                    img.src = item.data;
+                    img.className = 'editable-image opacity-0 transition-opacity duration-300';
+
+                    imgContainer.appendChild(img);
+                    wrapper.appendChild(toolbar);
+                    wrapper.appendChild(imgContainer);
+                    editorContainer.appendChild(wrapper);
+
+                    const ratio = parseFloat(aspectRatioSelect.value);
+                    new Cropper(img, {
+                        aspectRatio: ratio,
+                        viewMode: 1,
+                        autoCropArea: 1,
+                        zoomable: false,
+                        ready: function () {
+                            this.cropper.element.classList.remove('opacity-0');
+                        }
+                    });
+
+                    updateUIState();
+                });
+
+            } catch (err) {
+                console.error("讀取圖片失敗:", err);
+                alert("讀取圖片時發生錯誤");
+            }
+
+            this.value = '';
+        });
+
+        aspectRatioSelect.addEventListener('change', function () {
+            const ratio = parseFloat(this.value);
+            const images = editorContainer.querySelectorAll('img.editable-image');
+            images.forEach(imgEl => {
+                if (imgEl.cropper) imgEl.cropper.setAspectRatio(ratio);
+            });
+        });
+
+        generateBtn.addEventListener('click', () => {
+            const images = Array.from(editorContainer.querySelectorAll('img.editable-image'));
+            if (images.length === 0) {
+                alert('請先上傳圖片');
+                return;
+            }
+
+            const targetWidth = parseInt(outputWidthInput.value) || 800;
+            const columns = parseInt(columnsInput.value) || 1;
+            const borderWidth = parseInt(borderWidthInput.value) || 0;
+            const borderColor = borderColorInput.value;
+
+            const canvases = images.map(imgEl => {
+                if (imgEl.cropper) return imgEl.cropper.getCroppedCanvas();
+                return null;
+            }).filter(c => c !== null);
+
+            if (canvases.length !== images.length) {
+                alert('部分圖片仍在處理中，請稍候再試');
+                return;
+            }
+
+            const processedImages = canvases.map(c => {
+                const originalRatio = c.height / c.width;
+                const finalHeight = targetWidth * originalRatio;
+                return { canvas: c, w: targetWidth, h: finalHeight };
+            });
+
+            let totalCanvasHeight = 0;
+            let rowHeights = [];
+
+            for (let i = 0; i < processedImages.length; i += columns) {
+                let maxH = 0;
+                for (let j = 0; j < columns; j++) {
+                    if (i + j < processedImages.length) {
+                        maxH = Math.max(maxH, processedImages[i + j].h);
+                    }
+                }
+                rowHeights.push(maxH);
+                totalCanvasHeight += maxH;
+            }
+
+            const totalCanvasWidth = targetWidth * columns;
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = totalCanvasWidth;
+            finalCanvas.height = totalCanvasHeight;
+            const ctx = finalCanvas.getContext('2d');
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+
+            let currentRow = 0;
+            let currentX = 0;
+            let currentY = 0;
+
+            processedImages.forEach((imgObj, index) => {
+                if (index > 0 && index % columns === 0) {
+                    currentX = 0;
+                    currentY += rowHeights[currentRow];
+                    currentRow++;
+                }
+                ctx.drawImage(imgObj.canvas, currentX, currentY, imgObj.w, imgObj.h);
+
+                // 繪製邊框
+                if (borderWidth > 0) {
+                    ctx.strokeStyle = borderColor;
+                    ctx.lineWidth = borderWidth;
+                    // 內縮邊框以確保不超出範圍
+                    ctx.strokeRect(
+                        currentX + borderWidth / 2,
+                        currentY + borderWidth / 2,
+                        imgObj.w - borderWidth,
+                        imgObj.h - borderWidth
+                    );
+                }
+
+                currentX += imgObj.w;
+            });
+
+            resultContainer.innerHTML = '';
+            const resultImg = document.createElement('img');
+            resultImg.src = finalCanvas.toDataURL('image/jpeg', 0.9);
+            resultImg.className = 'max-w-full shadow-lg border border-gray-600';
+            resultContainer.appendChild(resultImg);
+
+            downloadLink.href = resultImg.src;
+            downloadLink.download = `merged_image_${Date.now()}.jpg`;
+            downloadLink.classList.remove('hidden');
+        });
+    </script>
+</body>
+
+</html>
