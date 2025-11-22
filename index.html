@@ -53,7 +53,7 @@
             <h1 class="text-3xl font-bold mb-2">圖片批次裁切與合成</h1>
         </header>
 
-        <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8 grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
             <div class="col-span-1 md:col-span-4">
                 <label class="block text-sm font-medium mb-2">1. 選擇圖片 (可多選)</label>
                 <input type="file" id="imageInput" multiple accept="image/*"
@@ -64,14 +64,14 @@
                 <label class="block text-sm font-medium mb-2">2. 全域裁切比例</label>
                 <select id="aspectRatio"
                     class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500">
-                    <option value="1">1:1 (正方形)</option>
-                    <option value="1.5" selected>3:2 (單眼橫幅)</option>
-                    <option value="0.66666">2:3 (單眼直幅)</option>
-                    <option value="1.33333">4:3 (傳統螢幕)</option>
-                    <option value="0.75">3:4 (傳統直式)</option>
-                    <option value="1.77777">16:9 (寬螢幕)</option>
-                    <option value="0.5625">9:16 (手機直式)</option>
-                    <option value="NaN">自由比例</option>
+                    <option value="1">1:1</option>
+                    <option value="1.5" selected>3:2</option>
+                    <option value="0.66666">2:3</option>
+                    <option value="1.33333">4:3</option>
+                    <option value="0.75">3:4</option>
+                    <option value="1.77777">16:9</option>
+                    <option value="0.5625">9:16</option>
+                    <option value="NaN">自由比例 (首圖同步)</option>
                 </select>
             </div>
 
@@ -355,6 +355,26 @@
                         zoomable: false,
                         ready: function () {
                             this.cropper.element.classList.remove('opacity-0');
+                        },
+                        cropend: function () {
+                            // 同步首圖比例邏輯 (預設開啟)
+                            const isFreeRatio = aspectRatioSelect.value === 'NaN';
+
+                            if (isFreeRatio) {
+                                const allImages = editorContainer.querySelectorAll('img.editable-image');
+                                if (allImages.length > 1 && this === allImages[0]) {
+                                    // 只有當操作的是第一張圖時才同步
+                                    const cropData = this.cropper.getData();
+                                    const newRatio = cropData.width / cropData.height;
+
+                                    // 同步給其他圖片
+                                    for (let i = 1; i < allImages.length; i++) {
+                                        if (allImages[i].cropper) {
+                                            allImages[i].cropper.setAspectRatio(newRatio);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     });
 
