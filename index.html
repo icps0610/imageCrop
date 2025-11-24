@@ -74,7 +74,8 @@
                     <option value="0.75">3:4</option>
                     <option value="1.77777">16:9</option>
                     <option value="0.5625">9:16</option>
-                    <option value="NaN">自由比例 (首圖同步)</option>
+                    <option value="NaN">自由比例</option>
+                    <option value="free_first">自由比例(首圖)</option>
                 </select>
             </div>
 
@@ -360,10 +361,11 @@
                             this.cropper.element.classList.remove('opacity-0');
                         },
                         cropend: function () {
-                            // 同步首圖比例邏輯 (預設開啟)
-                            const isFreeRatio = aspectRatioSelect.value === 'NaN';
+                            // 同步首圖比例邏輯
+                            // 只有在選擇 "自由比例(首圖)" 時才啟用同步
+                            const isSyncFirst = aspectRatioSelect.value === 'free_first';
 
-                            if (isFreeRatio) {
+                            if (isSyncFirst) {
                                 const allImages = editorContainer.querySelectorAll('img.editable-image');
                                 if (allImages.length > 1 && this === allImages[0]) {
                                     // 只有當操作的是第一張圖時才同步
