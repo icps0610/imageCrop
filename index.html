@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-TW">
 
@@ -217,14 +218,12 @@
                 const promises = images.map((img, index) => {
                     return new Promise((resolve) => {
                         if (img.cropper) {
-                            // 取得原始檔名 (從我們之前存的 data 屬性或是重新抓取，這裡我們簡單用順序命名，或者如果能存取到原始檔名更好)
                             let filename = `image_${index + 1}.jpg`;
 
                             // 嘗試從 toolbar 找回檔名
                             const toolbar = img.closest('.image-block').querySelector('.drag-handle span:last-child');
                             if (toolbar) {
-                                // 去除括號
-                                const nameText = toolbar.textContent.replace(/^\(|\)$/g, '');
+                                const nameText = toolbar.textContent.replace(/^\(\vert{}\)$/g, '');
                                 if (nameText) filename = nameText;
                             }
 
@@ -273,12 +272,10 @@
             imageInput.value = '';
         });
 
-        // 1. 處理圖片上傳 (修改為先讀取全部 -> 排序 -> 顯示)
-        imageInput.addEventListener('change', async function (e) {
-            const files = Array.from(e.target.files);
+        // 獨立出檔案處理邏輯，供上傳與貼上共用
+        async function processImageFiles(files) {
             if (!files.length) return;
 
-            // 建立一個 Promise 陣列來讀取所有檔案
             const readPromises = files.map(file => {
                 return new Promise((resolve) => {
                     const reader = new FileReader();
@@ -293,13 +290,10 @@
             });
 
             try {
-                // 等待所有檔案讀取完成
                 const results = await Promise.all(readPromises);
 
-                // 依檔名排序 (使用 localeCompare 支援中文排序，numeric: true 讓 1.jpg, 2.jpg, 10.jpg 排序正確)
                 results.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant-TW', { numeric: true }));
 
-                // 依序顯示圖片
                 results.forEach(item => {
                     const wrapper = document.createElement('div');
                     wrapper.className = "image-block bg-gray-800 rounded shadow-lg overflow-hidden border border-gray-700 mb-4";
@@ -361,18 +355,14 @@
                             this.cropper.element.classList.remove('opacity-0');
                         },
                         cropend: function () {
-                            // 同步首圖比例邏輯
-                            // 只有在選擇 "自由比例(首圖)" 時才啟用同步
                             const isSyncFirst = aspectRatioSelect.value === 'free_first';
 
                             if (isSyncFirst) {
                                 const allImages = editorContainer.querySelectorAll('img.editable-image');
                                 if (allImages.length > 1 && this === allImages[0]) {
-                                    // 只有當操作的是第一張圖時才同步
                                     const cropData = this.cropper.getData();
                                     const newRatio = cropData.width / cropData.height;
 
-                                    // 同步給其他圖片
                                     for (let i = 1; i < allImages.length; i++) {
                                         if (allImages[i].cropper) {
                                             allImages[i].cropper.setAspectRatio(newRatio);
@@ -390,8 +380,32 @@
                 console.error("讀取圖片失敗:", err);
                 alert("讀取圖片時發生錯誤");
             }
+        }
 
+        // 1. 處理圖片上傳
+        imageInput.addEventListener('change', function (e) {
+            const files = Array.from(e.target.files);
+            processImageFiles(files);
             this.value = '';
+        });
+
+        // 2. 處理全域貼上事件 (Ctrl+V / Cmd+V)
+        window.addEventListener('paste', function(e) {
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            const files = [];
+            
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    const blob = items[i].getAsFile();
+                    // 重新命名為包含時間戳記，避免檔名衝突
+                    const file = new File([blob], `pasted_image_${Date.now()}.png`, { type: blob.type });
+                    files.push(file);
+                }
+            }
+            
+            if (files.length > 0) {
+                processImageFiles(files);
+            }
         });
 
         aspectRatioSelect.addEventListener('change', function () {
@@ -405,7 +419,7 @@
         generateBtn.addEventListener('click', () => {
             const images = Array.from(editorContainer.querySelectorAll('img.editable-image'));
             if (images.length === 0) {
-                alert('請先上傳圖片');
+                alert('請先上傳或貼上圖片');
                 return;
             }
 
@@ -426,7 +440,8 @@
 
             const processedImages = canvases.map(c => {
                 const originalRatio = c.height / c.width;
-                const finalHeight = targetWidth * originalRatio;
+                // 修復：強制將高度轉為整數，避免小數點導致 Canvas 反鋸齒透出背景白線
+                const finalHeight = Math.round(targetWidth * originalRatio);
                 return { canvas: c, w: targetWidth, h: finalHeight };
             });
 
@@ -469,7 +484,6 @@
                 if (borderWidth > 0) {
                     ctx.strokeStyle = borderColor;
                     ctx.lineWidth = borderWidth;
-                    // 內縮邊框以確保不超出範圍
                     ctx.strokeRect(
                         currentX + borderWidth / 2,
                         currentY + borderWidth / 2,
