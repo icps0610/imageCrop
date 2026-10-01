@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh-TW">
 
@@ -51,7 +50,6 @@
 </head>
 
 <body class="bg-gray-900 text-white min-h-screen p-6">
-
     <div class="max-w-6xl mx-auto">
         <header class="mb-8 text-center">
             <h1 class="text-3xl font-bold mb-2">圖片批次裁切與合成</h1>
@@ -93,7 +91,17 @@
             </div>
 
             <div>
-                <label class="block text-sm font-medium mb-2">4. 邊框寬度 (px)</label>
+                <label class="block text-sm font-medium mb-2">4. 合併尺寸模式</label>
+                <select id="mergeMode"
+                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500">
+                    <option value="default">預設比例 (高度不同時留白)</option>
+                    <option value="cover" selected>統一尺寸填滿 (自動裁切無空白)</option>
+                    <option value="stretch">統一尺寸拉伸 (變形但無空白)</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-2">5. 邊框寬度 (px)</label>
                 <input type="number" id="borderWidth" value="0" min="0"
                     class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500">
             </div>
@@ -104,7 +112,7 @@
                     class="w-full h-[42px] bg-gray-700 border border-gray-600 rounded px-1 py-1 cursor-pointer">
             </div>
 
-            <div class="md:col-start-4">
+            <div class="md:col-start-4 flex flex-col justify-end">
                 <button id="generateBtn"
                     class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition duration-200">
                     合成圖片
@@ -113,7 +121,6 @@
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
             <div class="space-y-6">
                 <div class="flex justify-between items-center border-b border-gray-700 pb-2">
                     <h2 class="text-xl font-semibold">編輯區域</h2>
@@ -123,7 +130,6 @@
                             class="text-xs bg-red-900 hover:bg-red-800 text-red-100 px-2 py-1 rounded">清空全部</button>
                     </div>
                 </div>
-
                 <div id="editorContainer" class="space-y-4 min-h-[100px]">
                     <p id="placeholderText" class="text-gray-500 text-center py-10">請上傳圖片...</p>
                 </div>
@@ -153,6 +159,7 @@
         const generateBtn = document.getElementById('generateBtn');
         const columnsInput = document.getElementById('columnsInput');
         const outputWidthInput = document.getElementById('outputWidth');
+        const mergeModeSelect = document.getElementById('mergeMode'); // 新增的模式選擇
         const borderWidthInput = document.getElementById('borderWidth');
         const borderColorInput = document.getElementById('borderColor');
         const resultContainer = document.getElementById('resultContainer');
@@ -173,15 +180,12 @@
             handle: '.drag-handle',
             ghostClass: 'sortable-ghost',
             dragClass: 'sortable-drag',
-
             // 關鍵設定：讓擠動更容易觸發
             swapThreshold: 0.65, // 數值越小越容易交換 (預設 1)。0.65 代表遮住目標 65% 時就交換，手感較佳
-
             // 自動捲動設定
             scroll: true,
             scrollSensitivity: 150, // 靠近邊緣多少 px 開始捲動
             scrollSpeed: 20,        // 捲動速度
-
             onEnd: function () {
                 // 排序結束後的 callback (目前無需操作)
             }
@@ -248,7 +252,6 @@
                 a.download = `cropped_images_${Date.now()}.zip`;
                 a.click();
                 URL.revokeObjectURL(url);
-
             } catch (err) {
                 console.error("ZIP 建立失敗", err);
                 alert("建立 ZIP 檔時發生錯誤");
@@ -427,6 +430,7 @@
             const columns = parseInt(columnsInput.value) || 1;
             const borderWidth = parseInt(borderWidthInput.value) || 0;
             const borderColor = borderColorInput.value;
+            const mergeMode = mergeModeSelect.value; // 讀取合併模式
 
             const canvases = images.map(imgEl => {
                 if (imgEl.cropper) return imgEl.cropper.getCroppedCanvas();
@@ -438,12 +442,20 @@
                 return;
             }
 
-            const processedImages = canvases.map(c => {
+            // 初步計算每張圖依據寬度縮放後的高度
+            let processedImages = canvases.map(c => {
                 const originalRatio = c.height / c.width;
-                // 修復：強制將高度轉為整數，避免小數點導致 Canvas 反鋸齒透出背景白線
                 const finalHeight = Math.round(targetWidth * originalRatio);
                 return { canvas: c, w: targetWidth, h: finalHeight };
             });
+
+            // 如果選了統一尺寸模式，找出最大高度，強制把所有圖片格子變成一樣大
+            if (mergeMode === 'cover' || mergeMode === 'stretch') {
+                const maxH = Math.max(...processedImages.map(img => img.h));
+                processedImages.forEach(img => {
+                    img.h = maxH;
+                });
+            }
 
             let totalCanvasHeight = 0;
             let rowHeights = [];
@@ -478,7 +490,28 @@
                     currentY += rowHeights[currentRow];
                     currentRow++;
                 }
-                ctx.drawImage(imgObj.canvas, currentX, currentY, imgObj.w, imgObj.h);
+
+                if (mergeMode === 'cover') {
+                    // 填滿且不變形 (裁切多餘部分) -> 類似 background-size: cover
+                    const sW = imgObj.canvas.width;
+                    const sH = imgObj.canvas.height;
+                    const scale = Math.max(imgObj.w / sW, imgObj.h / sH);
+                    const drawW = sW * scale;
+                    const drawH = sH * scale;
+                    // 置中對齊
+                    const drawX = currentX + (imgObj.w - drawW) / 2;
+                    const drawY = currentY + (imgObj.h - drawH) / 2;
+
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(currentX, currentY, imgObj.w, imgObj.h);
+                    ctx.clip(); // 限制繪圖區域，避免突出格子
+                    ctx.drawImage(imgObj.canvas, drawX, drawY, drawW, drawH);
+                    ctx.restore();
+                } else {
+                    // default 或 stretch (stretch 因為前面已經強制把 h 變成了 maxH，所以這裡畫下去就直接變形填滿了)
+                    ctx.drawImage(imgObj.canvas, currentX, currentY, imgObj.w, imgObj.h);
+                }
 
                 // 繪製邊框
                 if (borderWidth > 0) {
